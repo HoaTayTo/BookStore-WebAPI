@@ -1,4 +1,5 @@
 ﻿using BookStore.Api.Data;
+using BookStore.Api.DTOs;
 using BookStore.Api.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,9 +22,17 @@ public class BooksController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAllBooks()
     {
-        var books = await _context.Books.ToListAsync();
-        return Ok(books);
+        // Dùng LINQ .Select() để chỉ nhặt những cột cần thiết biến thành DTO
+        var booksDtos = await _context.Books.Select(b=>new BookResponseDto
+        {
+            Id = b.Id,
+            Title = b.Title,
+            Author = b.Author,
+            Price = b.Price
+        }).ToListAsync();
+        return Ok(booksDtos);
     }
+
     // 3. LẤY SÁCH THEO ID: GET api/books/{id}
     [HttpGet("{id}")]
     public async Task<IActionResult> GetBookById(int id)
@@ -32,23 +41,34 @@ public class BooksController : ControllerBase
 
         if (book == null)
         {
-            return NotFound($"Không tìm thấy cuốn sách nào có mã ID = {id}!"); // Trả về mã 404 Not Found
+            return NotFound($"Không tìm thấy cuốn sách có Id = {id}"); // 404
         }
 
-        return Ok(book);
+        var bookDto = new BookResponseDto
+        {
+            Id = book.Id,
+            Title = book.Title,
+            Author = book.Author,
+            Price = book.Price
+        };
+
+        return Ok(bookDto);
+
     }
 
     // 4. TẠO MỚI SÁCH VÀO SQL SERVER: POST api/books
     [HttpPost]
-    public async Task<IActionResult> CreateBook([FromBody] Book newBook)
+    public async Task<IActionResult> CreateBook([FromBody] CreateBookDto bookDto)
     {
-        if (newBook.Price < 0)
+        // Tạo đối tượng Book từ DTO
+        var newBook = new Book
         {
-            return BadRequest("Giá sách không được là số âm!");
-        }
+            Title = bookDto.Title,
+            Author = bookDto.Author,
+            Price = bookDto.Price
+        };
 
-        // Thêm vào bộ nhớ theo dõi của EF Core
-
+        // Thêm newBook vào DbContext (chưa bắn lệnh SQL vào SQL Server)
         _context.Books.Add(newBook);
 
         // BẮN LỆNH SQL THẬT (INSERT INTO Books...) VÀO SQL SERVER
@@ -60,20 +80,16 @@ public class BooksController : ControllerBase
 
     // 5. CẬP NHẬT SÁCH: PUT api/books/{id}
     [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateBook(int id, [FromBody] Book updatedBook)
+    public async Task<IActionResult> UpdateBook(int id, [FromBody] UpdateBookDto bookDto)
     {
         var exsitingBook = await _context.Books.FindAsync(id);
         if(exsitingBook == null)
         {
             return NotFound($"Không tìm thấy cuốn sách có Id = {id} để cập nhật!"); // 404
         }
-        if(updatedBook.Price < 0)
-        {
-            return BadRequest("Giá sách không được là số âm!"); // 400
-        }
-        exsitingBook.Title = updatedBook.Title;
-        exsitingBook.Author = updatedBook.Author;
-        exsitingBook.Price = updatedBook.Price;
+        exsitingBook.Title = bookDto.Title;
+        exsitingBook.Author = bookDto.Author;
+        exsitingBook.Price = bookDto.Price;
 
         await _context.SaveChangesAsync();
         return NoContent();
@@ -95,7 +111,5 @@ public class BooksController : ControllerBase
 
         return NoContent();
     }   
-
- 
 
 }
