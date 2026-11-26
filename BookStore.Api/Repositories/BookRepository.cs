@@ -12,9 +12,36 @@ namespace BookStore.Api.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<Book>> GetAllAsync()
+        public async Task<IEnumerable<Book>> GetAllAsync(string? search = null,
+        string? sortBy = null,
+        int pageNumber = 1,
+        int pageSize = 10)
         {
-            return await _context.Books.ToListAsync();
+            // 1. Khởi tạo câu truy vấn dạng IQueryable (chưa chạy xuống DB)
+            var query = _context.Books.AsQueryable();
+
+            // 2. Áp dụng các điều kiện tìm kiếm nếu có
+            if (!string.IsNullOrEmpty(search))
+            {
+                query = query.Where(b => b.Title.Contains(search) || b.Author.Contains(search));
+            }
+
+            // 3. Sắp xếp nếu có
+            if (!string.IsNullOrEmpty(sortBy))
+            {
+                query = sortBy.ToLower() switch
+                {
+                    "price_desc" => query.OrderByDescending(b => b.Price), // Giá giảm dần
+                    "price_asc" => query.OrderBy(b => b.Price),           // Giá tăng dần
+                    "title" => query.OrderBy(b => b.Title),           // Tên A-Z
+                    _ => query.OrderBy(b => b.Id)               // Mặc định theo Id
+                };
+            }
+
+            // 4. Phân trang
+            var books = await query.Skip((pageNumber - 1) * pageSize).Take(pageSize).ToListAsync();
+
+            return books;
         }
 
         public async Task<Book?> GetByIdAsync(int id)

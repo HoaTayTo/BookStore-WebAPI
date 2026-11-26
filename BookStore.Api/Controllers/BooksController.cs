@@ -1,8 +1,7 @@
-﻿using BookStore.Api.Data;
-using BookStore.Api.DTOs;
+﻿using BookStore.Api.DTOs;
 using BookStore.Api.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using BookStore.Api.Repositories;
 
 namespace BookStore.Api.Controllers;
 
@@ -10,26 +9,29 @@ namespace BookStore.Api.Controllers;
 [Route("/api/[controller]")]
 public class BooksController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    // BÂY GIỜ CHÚNG TA CHỈ GIAO TIẾP QUA INTERFACE NÀY!
+    private readonly IBookRepository _bookRepo;
 
-    // 1. Dependency Injection: Nhận AppDbContext từ hệ thống
-    public BooksController(AppDbContext context)
+    // Dependency Injection: Hệ thống sẽ tự động bơm BookRepository vào đây
+    public BooksController(IBookRepository bookRepo)
     {
-        _context = context;
+        _bookRepo = bookRepo;
     }
 
-    // 2. LẤY TẤT CẢ SÁCH TỪ SQL SERVER: GET api/books
+    // 2. LẤY TẤT CẢ SÁCH
     [HttpGet]
-    public async Task<IActionResult> GetAllBooks()
+    public async Task<IActionResult> GetAllBooks([FromQuery] string? search, [FromQuery] string? sortBy, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
     {
         // Dùng LINQ .Select() để chỉ nhặt những cột cần thiết biến thành DTO
-        var booksDtos = await _context.Books.Select(b=>new BookResponseDto
+        var books = await _bookRepo.GetAllAsync(search, sortBy, pageNumber, pageSize);
+
+        var booksDtos = books.Select(book => new BookResponseDto
         {
-            Id = b.Id,
-            Title = b.Title,
-            Author = b.Author,
-            Price = b.Price
-        }).ToListAsync();
+            Id = book.Id,
+            Title = book.Title,
+            Author = book.Author,
+            Price = book.Price
+        });
         return Ok(booksDtos);
     }
 
@@ -37,7 +39,7 @@ public class BooksController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetBookById(int id)
     {
-        var book = await _context.Books.FindAsync(id);
+        var book = await _bookRepo.GetByIdAsync(id);
 
         if (book == null)
         {
@@ -68,21 +70,29 @@ public class BooksController : ControllerBase
             Price = bookDto.Price
         };
 
-        // Thêm newBook vào DbContext (chưa bắn lệnh SQL vào SQL Server)
-        _context.Books.Add(newBook);
 
-        // BẮN LỆNH SQL THẬT (INSERT INTO Books...) VÀO SQL SERVER
-        await _context.SaveChangesAsync();
+
+        // Giao việc lưu sách cho Repository lo liệu
+
+        await _bookRepo.AddAsync(newBook);
+
+        var responseDto = new BookResponseDto
+        {
+            Id = newBook.Id,
+            Title = newBook.Title,
+            Author = newBook.Author,
+            Price = newBook.Price
+        };
 
         // Sau khi SaveChangesAsync, SQL Server sẽ TỰ ĐỘNG sinh ra Id thật cho newBook!
-        return CreatedAtAction(nameof(GetBookById), new { id = newBook.Id }, newBook);
+        return CreatedAtAction(nameof(GetBookById), new { id = newBook.Id }, responseDto);
     }
 
     // 5. CẬP NHẬT SÁCH: PUT api/books/{id}
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateBook(int id, [FromBody] UpdateBookDto bookDto)
     {
-        var exsitingBook = await _context.Books.FindAsync(id);
+        var exsitingBook = await _bookRepo.GetByIdAsync(id);
         if(exsitingBook == null)
         {
             return NotFound($"Không tìm thấy cuốn sách có Id = {id} để cập nhật!"); // 404
@@ -91,7 +101,7 @@ public class BooksController : ControllerBase
         exsitingBook.Author = bookDto.Author;
         exsitingBook.Price = bookDto.Price;
 
-        await _context.SaveChangesAsync();
+        await _bookRepo.UpdateAsync(exsitingBook);
         return NoContent();
     }
 
@@ -99,17 +109,15 @@ public class BooksController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteBook(int id)
     {
-        var book = await _context.Books.FindAsync(id);
+        var book = await _bookRepo.GetByIdAsync(id);
         if (book == null)
         {
-            return NotFound($"Không tìm thấy cuốn sách có Id = {id} để để xóa!"); // 404
+            return NotFound($"Không tìm thấy cuốn sách có Id = {id} để xóa!"); // 404
         }
+        // Giao việc xóa cho Repository
+        await _bookRepo.DeleteAsync(book);
 
-        _context.Remove(book);
-
-        await _context.SaveChangesAsync();
-
-        return NoContent();
+        return NoContent(); // Giao việc xóa cho Repository
     }   
 
 }
